@@ -1,6 +1,7 @@
 """Графический интерфейс игры «Пятнашки» (tkinter)."""
 
 import tkinter as tk
+from tkinter import messagebox
 
 from board import Board
 
@@ -8,6 +9,13 @@ WINDOW_WIDTH = 640
 WINDOW_HEIGHT = 480
 TILE_COLOR = "#4a90d9"
 TEXT_COLOR = "white"
+
+CONTROL_SCHEMES = {
+    "WASD": {"a": "left", "w": "up", "s": "down", "d": "right",
+             "ф": "left", "ц": "up", "ы": "down", "в": "right"},
+    "DFJK": {"d": "left", "f": "up", "j": "down", "k": "right",
+             "в": "left", "а": "up", "о": "down", "л": "right"},
+}
 
 
 class PyatnashkiApp:
@@ -17,9 +25,11 @@ class PyatnashkiApp:
         self.root = root
         self.size = size
         self.board = Board(size)
+        self.scheme = "WASD"
         root.title("Пятнашки")
         root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         root.configure(bg="white")
+        root.bind("<Key>", self.on_key)
         self._build_menu()
         self._build_layout()
         self.new_game()
@@ -46,10 +56,28 @@ class PyatnashkiApp:
             bg="white",
             font=("Arial", 12),
         ).pack(anchor="w")
+        self.status = tk.Label(
+            self.panel, text="", bg="white",
+            font=("Arial", 12, "bold"), fg="green",
+        )
+        self.status.pack(anchor="w", pady=5)
+
+    def on_key(self, event):
+        """Обрабатывает нажатие клавиш управления."""
+        key = event.char.lower()
+        direction = CONTROL_SCHEMES[self.scheme].get(key)
+        if direction is None or self.board.is_solved():
+            return
+        if self.board.move_tile(direction):
+            self.draw_board()
+            if self.board.is_solved():
+                self.status.config(text="Вы победили!")
+                messagebox.showinfo("Победа", "Вы победили!")
 
     def new_game(self):
         """Начинает новую партию: перемешивание и отрисовка."""
         self.board.shuffle()
+        self.status.config(text="")
         self.draw_board()
 
     def draw_board(self):
