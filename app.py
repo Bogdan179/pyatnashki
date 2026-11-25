@@ -1,12 +1,15 @@
 """Графический интерфейс игры «Пятнашки» (tkinter)."""
 
+import time
 import tkinter as tk
 from tkinter import messagebox
 
 from board import Board
+from storage import get_best, save_best
 
-WINDOW_WIDTH = 640
+WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 480
+PANEL_WIDTH = 200
 TILE_COLOR = "#4a90d9"
 TEXT_COLOR = "white"
 
@@ -26,6 +29,9 @@ class PyatnashkiApp:
         self.size = size
         self.board = Board(size)
         self.scheme = "WASD"
+        self.moves = 0
+        self.start_time = None
+        self.timer_job = None
         root.title("Пятнашки")
         root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
         root.configure(bg="white")
@@ -48,14 +54,25 @@ class PyatnashkiApp:
         self.canvas.pack(side="left", fill="both", expand=True,
                          padx=10, pady=10)
         self.canvas.bind("<Configure>", lambda event: self.draw_board())
-        self.panel = tk.Frame(self.root, bg="white")
-        self.panel.pack(side="right", anchor="n", padx=10, pady=10)
+        self.panel = tk.Frame(self.root, bg="white", width=PANEL_WIDTH)
+        self.panel.pack(side="right", fill="y", padx=10, pady=10)
+        self.panel.pack_propagate(False)
         tk.Label(
             self.panel,
             text=f"Поле {self.size}x{self.size}",
             bg="white",
             font=("Arial", 12),
         ).pack(anchor="w")
+        self.best_label = tk.Label(self.panel, bg="white",
+                                   font=("Arial", 11), justify="left",
+                                   wraplength=PANEL_WIDTH - 20)
+        self.best_label.pack(anchor="w", pady=(10, 0))
+        self.timer_label = tk.Label(self.panel, text="Время: 0.0 с",
+                                    bg="white", font=("Arial", 11))
+        self.timer_label.pack(anchor="w")
+        self.moves_label = tk.Label(self.panel, text="Ходы: 0",
+                                    bg="white", font=("Arial", 11))
+        self.moves_label.pack(anchor="w")
         self.status = tk.Label(
             self.panel, text="", bg="white",
             font=("Arial", 12, "bold"), fg="green",
@@ -69,15 +86,62 @@ class PyatnashkiApp:
         if direction is None or self.board.is_solved():
             return
         if self.board.move_tile(direction):
+            if self.start_time is None:
+                self.start_time = time.monotonic()
+                self._update_timer()
+            self.moves += 1
+            self.moves_label.config(text=f"Ходы: {self.moves}")
             self.draw_board()
             if self.board.is_solved():
-                self.status.config(text="Вы победили!")
-                messagebox.showinfo("Победа", "Вы победили!")
+                self._on_win()
+
+    def _on_win(self):
+        """Фиксирует победу: стоп таймера, рекорд, надпись."""
+        elapsed = time.monotonic() - self.start_time
+        if self.timer_job is not None:
+            self.root.after_cancel(self.timer_job)
+            self.timer_job = None
+        self.timer_label.config(text=f"Время: {elapsed:.1f} с")
+        is_record = save_best(self.size, elapsed, self.moves,
+                              self.initial_board)
+        self._show_best()
+        text = f"Вы победили! Время: {elapsed:.1f} с, ходов: {self.moves}"
+        if is_record:
+            text += ". Новый рекорд!"
+        self.status.config(text="Вы победили!")
+        messagebox.showinfo("Победа", text)
+
+    def _show_best(self):
+        """Показывает лучшее время для текущего размера поля."""
+        best = get_best(self.size)
+        if best is None:
+            text = "Лучшее время:\n—"
+        else:
+            text = (f"Лучшее время:\n{best['seconds']:.1f} с "
+                    f"({best['moves']} ходов)")
+        self.best_label.config(text=text)
+
+    def _update_timer(self):
+        """Обновляет таймер каждые 100 мс."""
+        if self.start_time is None:
+            return
+        elapsed = time.monotonic() - self.start_time
+        self.timer_label.config(text=f"Время: {elapsed:.1f} с")
+        self.timer_job = self.root.after(100, self._update_timer)
 
     def new_game(self):
-        """Начинает новую партию: перемешивание и отрисовка."""
+        """Начинает новую партию: перемешивание, сброс таймера и ходов."""
+        if self.timer_job is not None:
+            self.root.after_cancel(self.timer_job)
+            self.timer_job = None
         self.board.shuffle()
+        self.initial_board = list(self.board.tiles)
+        self.moves = 0
+        self.start_time = None
+        self.moves_label.config(text="Ходы: 0")
+        self.timer_label.config(text="Время: 0.0 с")
         self.status.config(text="")
+        self._show_best()
         self.draw_board()
 
     def draw_board(self):
