@@ -7,11 +7,12 @@ from tkinter import messagebox
 from board import Board
 from storage import get_best, save_best
 
-WINDOW_WIDTH = 720
-WINDOW_HEIGHT = 480
+WINDOW_SIZES = [(640, 480), (720, 480), (900, 600), (1100, 700)]
 PANEL_WIDTH = 200
 TILE_COLOR = "#4a90d9"
 TEXT_COLOR = "white"
+MIN_SIZE = 2
+MAX_SIZE = 10
 
 CONTROL_SCHEMES = {
     "WASD": {"a": "left", "w": "up", "s": "down", "d": "right",
@@ -19,6 +20,7 @@ CONTROL_SCHEMES = {
     "DFJK": {"d": "left", "f": "up", "j": "down", "k": "right",
              "в": "left", "а": "up", "о": "down", "л": "right"},
 }
+OPPOSITE = {"left": "right", "right": "left", "up": "down", "down": "up"}
 
 
 class PyatnashkiApp:
@@ -33,9 +35,9 @@ class PyatnashkiApp:
         self.start_time = None
         self.timer_job = None
         root.title("Пятнашки")
-        root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        root.geometry(f"{WINDOW_SIZES[1][0]}x{WINDOW_SIZES[1][1]}")
         root.configure(bg="white")
-        root.bind("<Key>", self.on_key)
+        root.bind("<Key>", self._safe(self.on_key))
         self._build_menu()
         self._build_layout()
         self.new_game()
@@ -43,26 +45,61 @@ class PyatnashkiApp:
     def _build_menu(self):
         menu = tk.Menu(self.root)
         game_menu = tk.Menu(menu, tearoff=0)
-        game_menu.add_command(label="Новая игра", command=self.new_game)
+        game_menu.add_command(label="Новая игра",
+                              command=self._safe(self.new_game))
         game_menu.add_separator()
         game_menu.add_command(label="Выход", command=self.root.destroy)
         menu.add_cascade(label="Игра", menu=game_menu)
+
+        settings = tk.Menu(menu, tearoff=0)
+
+        size_menu = tk.Menu(settings, tearoff=0)
+        self.size_var = tk.IntVar(value=self.size)
+        for n in range(MIN_SIZE, MAX_SIZE + 1):
+            size_menu.add_radiobutton(
+                label=f"{n}x{n}", variable=self.size_var, value=n,
+                command=self._safe(self.change_size))
+        settings.add_cascade(label="Размер поля", menu=size_menu)
+
+        window_menu = tk.Menu(settings, tearoff=0)
+        self.window_var = tk.StringVar(
+            value=f"{WINDOW_SIZES[1][0]}x{WINDOW_SIZES[1][1]}")
+        for w, h in WINDOW_SIZES:
+            window_menu.add_radiobutton(
+                label=f"{w}x{h}", variable=self.window_var,
+                value=f"{w}x{h}", command=self._safe(self.change_window))
+        settings.add_cascade(label="Размер окна", menu=window_menu)
+
+        scheme_menu = tk.Menu(settings, tearoff=0)
+        self.scheme_var = tk.StringVar(value="WASD")
+        for name in CONTROL_SCHEMES:
+            scheme_menu.add_radiobutton(
+                label=name, variable=self.scheme_var, value=name,
+                command=self._safe(self.change_scheme))
+        settings.add_cascade(label="Управление", menu=scheme_menu)
+
+        self.invert_var = tk.BooleanVar(value=False)
+        settings.add_checkbutton(label="Инвертировать управление",
+                                 variable=self.invert_var)
+        menu.add_cascade(label="Настройки", menu=settings)
         self.root.config(menu=menu)
 
     def _build_layout(self):
         self.canvas = tk.Canvas(self.root, bg="white", highlightthickness=0)
         self.canvas.pack(side="left", fill="both", expand=True,
                          padx=10, pady=10)
-        self.canvas.bind("<Configure>", lambda event: self.draw_board())
+        self.canvas.bind("<Configure>",
+                         lambda event: self._safe(self.draw_board)())
         self.panel = tk.Frame(self.root, bg="white", width=PANEL_WIDTH)
         self.panel.pack(side="right", fill="y", padx=10, pady=10)
         self.panel.pack_propagate(False)
-        tk.Label(
+        self.size_label = tk.Label(
             self.panel,
             text=f"Поле {self.size}x{self.size}",
             bg="white",
             font=("Arial", 12),
-        ).pack(anchor="w")
+        )
+        self.size_label.pack(anchor="w")
         self.best_label = tk.Label(self.panel, bg="white",
                                    font=("Arial", 11), justify="left",
                                    wraplength=PANEL_WIDTH - 20)
@@ -79,12 +116,38 @@ class PyatnashkiApp:
         )
         self.status.pack(anchor="w", pady=5)
 
+    def _safe(self, func):
+        """Обёртка: исключение в callback показывает окно ошибки."""
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as exc:
+                messagebox.showerror("Ошибка", f"Произошла ошибка: {exc}")
+        return wrapper
+
+    def change_size(self):
+        """Меняет размер поля и начинает новую партию."""
+        self.size = self.size_var.get()
+        self.board = Board(self.size)
+        self.size_label.config(text=f"Поле {self.size}x{self.size}")
+        self.new_game()
+
+    def change_window(self):
+        """Применяет выбранный в меню размер окна."""
+        self.root.geometry(self.window_var.get())
+
+    def change_scheme(self):
+        """Переключает схему управления (WASD / DFJK)."""
+        self.scheme = self.scheme_var.get()
+
     def on_key(self, event):
         """Обрабатывает нажатие клавиш управления."""
         key = event.char.lower()
         direction = CONTROL_SCHEMES[self.scheme].get(key)
         if direction is None or self.board.is_solved():
             return
+        if self.invert_var.get():
+            direction = OPPOSITE[direction]
         if self.board.move_tile(direction):
             if self.start_time is None:
                 self.start_time = time.monotonic()
