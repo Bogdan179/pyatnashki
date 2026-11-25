@@ -2,15 +2,13 @@
 
 import time
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import colorchooser, messagebox
 
 from board import Board
 from storage import get_best, save_best
 
 WINDOW_SIZES = [(640, 480), (720, 480), (900, 600), (1100, 700)]
 PANEL_WIDTH = 200
-TILE_COLOR = "#4a90d9"
-TEXT_COLOR = "white"
 MIN_SIZE = 2
 MAX_SIZE = 10
 
@@ -31,12 +29,14 @@ class PyatnashkiApp:
         self.size = size
         self.board = Board(size)
         self.scheme = "WASD"
+        self.bg_color = "white"
+        self.tile_color = "#4a90d9"
         self.moves = 0
         self.start_time = None
         self.timer_job = None
         root.title("Пятнашки")
         root.geometry(f"{WINDOW_SIZES[1][0]}x{WINDOW_SIZES[1][1]}")
-        root.configure(bg="white")
+        root.configure(bg=self.bg_color)
         root.bind("<Key>", self._safe(self.on_key))
         self._build_menu()
         self._build_layout()
@@ -81,37 +81,48 @@ class PyatnashkiApp:
         self.invert_var = tk.BooleanVar(value=False)
         settings.add_checkbutton(label="Инвертировать управление",
                                  variable=self.invert_var)
+
+        colors_menu = tk.Menu(settings, tearoff=0)
+        colors_menu.add_command(label="Цвет фона...",
+                                command=self._safe(self.pick_bg_color))
+        colors_menu.add_command(label="Цвет плиток...",
+                                command=self._safe(self.pick_tile_color))
+        settings.add_cascade(label="Цвета", menu=colors_menu)
+
         menu.add_cascade(label="Настройки", menu=settings)
         self.root.config(menu=menu)
 
     def _build_layout(self):
-        self.canvas = tk.Canvas(self.root, bg="white", highlightthickness=0)
+        self.canvas = tk.Canvas(self.root, bg=self.bg_color,
+                                highlightthickness=0)
         self.canvas.pack(side="left", fill="both", expand=True,
                          padx=10, pady=10)
         self.canvas.bind("<Configure>",
                          lambda event: self._safe(self.draw_board)())
-        self.panel = tk.Frame(self.root, bg="white", width=PANEL_WIDTH)
+        self.canvas.bind("<Button-1>", self._safe(self.on_click))
+        self.panel = tk.Frame(self.root, bg=self.bg_color,
+                              width=PANEL_WIDTH)
         self.panel.pack(side="right", fill="y", padx=10, pady=10)
         self.panel.pack_propagate(False)
         self.size_label = tk.Label(
             self.panel,
             text=f"Поле {self.size}x{self.size}",
-            bg="white",
+            bg=self.bg_color,
             font=("Arial", 12),
         )
         self.size_label.pack(anchor="w")
-        self.best_label = tk.Label(self.panel, bg="white",
+        self.best_label = tk.Label(self.panel, bg=self.bg_color,
                                    font=("Arial", 11), justify="left",
                                    wraplength=PANEL_WIDTH - 20)
         self.best_label.pack(anchor="w", pady=(10, 0))
         self.timer_label = tk.Label(self.panel, text="Время: 0.0 с",
-                                    bg="white", font=("Arial", 11))
+                                    bg=self.bg_color, font=("Arial", 11))
         self.timer_label.pack(anchor="w")
         self.moves_label = tk.Label(self.panel, text="Ходы: 0",
-                                    bg="white", font=("Arial", 11))
+                                    bg=self.bg_color, font=("Arial", 11))
         self.moves_label.pack(anchor="w")
         self.status = tk.Label(
-            self.panel, text="", bg="white",
+            self.panel, text="", bg=self.bg_color,
             font=("Arial", 12, "bold"), fg="green",
         )
         self.status.pack(anchor="w", pady=5)
@@ -140,6 +151,34 @@ class PyatnashkiApp:
         """Переключает схему управления (WASD / DFJK)."""
         self.scheme = self.scheme_var.get()
 
+    def pick_bg_color(self):
+        """Выбор цвета фона окна."""
+        color = colorchooser.askcolor(color=self.bg_color,
+                                      title="Цвет фона")[1]
+        if color is None:
+            return
+        self.bg_color = color
+        widgets = (self.root, self.canvas, self.panel, self.size_label,
+                   self.best_label, self.timer_label, self.moves_label,
+                   self.status)
+        for widget in widgets:
+            widget.configure(bg=color)
+
+    def pick_tile_color(self):
+        """Выбор цвета плиток."""
+        color = colorchooser.askcolor(color=self.tile_color,
+                                      title="Цвет плиток")[1]
+        if color is None:
+            return
+        self.tile_color = color
+        self.draw_board()
+
+    def _text_color(self):
+        """Цвет цифр на плитке: чёрный на светлом, белый на тёмном."""
+        r, g, b = self.root.winfo_rgb(self.tile_color)
+        lum = (0.299 * r + 0.587 * g + 0.114 * b) / 65535
+        return "black" if lum > 0.6 else "white"
+
     def on_key(self, event):
         """Обрабатывает нажатие клавиш управления."""
         key = event.char.lower()
@@ -149,14 +188,31 @@ class PyatnashkiApp:
         if self.invert_var.get():
             direction = OPPOSITE[direction]
         if self.board.move_tile(direction):
-            if self.start_time is None:
-                self.start_time = time.monotonic()
-                self._update_timer()
-            self.moves += 1
-            self.moves_label.config(text=f"Ходы: {self.moves}")
-            self.draw_board()
-            if self.board.is_solved():
-                self._on_win()
+            self._after_move()
+
+    def on_click(self, event):
+        """Обрабатывает клик мышью по костяшке."""
+        if self.board.is_solved():
+            return
+        cell = min(self.canvas.winfo_width(),
+                   self.canvas.winfo_height()) / self.size
+        col = int(event.x // cell)
+        row = int(event.y // cell)
+        if not (0 <= row < self.size and 0 <= col < self.size):
+            return
+        if self.board.move_index(row * self.size + col):
+            self._after_move()
+
+    def _after_move(self):
+        """Общие действия после хода: таймер, ходы, победа."""
+        if self.start_time is None:
+            self.start_time = time.monotonic()
+            self._update_timer()
+        self.moves += 1
+        self.moves_label.config(text=f"Ходы: {self.moves}")
+        self.draw_board()
+        if self.board.is_solved():
+            self._on_win()
 
     def _on_win(self):
         """Фиксирует победу: стоп таймера, рекорд, надпись."""
@@ -222,11 +278,11 @@ class PyatnashkiApp:
             x0, y0 = col * cell, row * cell
             self.canvas.create_rectangle(
                 x0 + 2, y0 + 2, x0 + cell - 2, y0 + cell - 2,
-                fill=TILE_COLOR, outline="white",
+                fill=self.tile_color, outline=self.bg_color,
             )
             self.canvas.create_text(
                 x0 + cell / 2, y0 + cell / 2,
-                text=str(value), fill=TEXT_COLOR,
+                text=str(value), fill=self._text_color(),
                 font=("Arial", max(8, int(cell / 3)), "bold"),
             )
 

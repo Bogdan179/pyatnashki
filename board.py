@@ -60,3 +60,19 @@ class Board:
         )
         self.empty = idx
         return True
+
+    def move_index(self, idx):
+        """Сдвигает костяшку с позиции idx, если она соседняя с пустой.
+
+        Возвращает True, если ход выполнен.
+        """
+        row, col = divmod(self.empty, self.size)
+        tr, tc = divmod(idx, self.size)
+        if abs(row - tr) + abs(col - tc) != 1:
+            return False
+        self.tiles[self.empty], self.tiles[idx] = (
+            self.tiles[idx],
+            self.tiles[self.empty],
+        )
+        self.empty = idx
+        return True
