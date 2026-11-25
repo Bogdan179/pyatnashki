@@ -5,7 +5,9 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox
 
 from board import Board
-from storage import get_best, save_best
+from storage import (
+    DEFAULT_COLORS, get_best, load_colors, save_best, save_colors,
+)
 
 WINDOW_SIZES = [(640, 480), (720, 480), (900, 600), (1100, 700)]
 PANEL_WIDTH = 200
@@ -29,8 +31,9 @@ class PyatnashkiApp:
         self.size = size
         self.board = Board(size)
         self.scheme = "WASD"
-        self.bg_color = "white"
-        self.tile_color = "#4a90d9"
+        colors = load_colors()
+        self.bg_color = colors["bg_color"]
+        self.tile_color = colors["tile_color"]
         self.moves = 0
         self.start_time = None
         self.timer_job = None
@@ -87,6 +90,9 @@ class PyatnashkiApp:
                                 command=self._safe(self.pick_bg_color))
         colors_menu.add_command(label="Цвет плиток...",
                                 command=self._safe(self.pick_tile_color))
+        colors_menu.add_separator()
+        colors_menu.add_command(label="По умолчанию",
+                                command=self._safe(self.reset_colors))
         settings.add_cascade(label="Цвета", menu=colors_menu)
 
         menu.add_cascade(label="Настройки", menu=settings)
@@ -158,11 +164,8 @@ class PyatnashkiApp:
         if color is None:
             return
         self.bg_color = color
-        widgets = (self.root, self.canvas, self.panel, self.size_label,
-                   self.best_label, self.timer_label, self.moves_label,
-                   self.status)
-        for widget in widgets:
-            widget.configure(bg=color)
+        self._apply_bg()
+        save_colors(self.bg_color, self.tile_color)
 
     def pick_tile_color(self):
         """Выбор цвета плиток."""
@@ -172,6 +175,23 @@ class PyatnashkiApp:
             return
         self.tile_color = color
         self.draw_board()
+        save_colors(self.bg_color, self.tile_color)
+
+    def reset_colors(self):
+        """Возвращает цвета фона и плиток к значениям по умолчанию."""
+        self.bg_color = DEFAULT_COLORS["bg_color"]
+        self.tile_color = DEFAULT_COLORS["tile_color"]
+        self._apply_bg()
+        self.draw_board()
+        save_colors(self.bg_color, self.tile_color)
+
+    def _apply_bg(self):
+        """Красит фон окна и всех элементов панели."""
+        widgets = (self.root, self.canvas, self.panel, self.size_label,
+                   self.best_label, self.timer_label, self.moves_label,
+                   self.status)
+        for widget in widgets:
+            widget.configure(bg=self.bg_color)
 
     def _text_color(self):
         """Цвет цифр на плитке: чёрный на светлом, белый на тёмном."""
